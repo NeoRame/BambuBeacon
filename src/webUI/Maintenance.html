@@ -34,12 +34,6 @@
       </div>
       <div class="note">Device reboots after a successful update.</div>
 
-      <div class="detailSplitter">Auto Update</div>
-      <div class="inline-info" id="otaStatus">Checking latest release...</div>
-      <div class="button-stack actions">
-        <button type="button" class="btn btn-outline" id="otaCheckBtn">Check for updates</button>
-        <button type="button" class="btn" id="otaUpdateBtn" disabled>Auto Update</button>
-      </div>
     </div>
 
     <div class="panel">
@@ -154,76 +148,6 @@
       data.append("firmware", file);
       xhr.send(data);
     });
-
-    let latestOta = null;
-    let updateAvailable = false;
-
-    async function checkOta() {
-      const status = document.getElementById("otaStatus");
-      const updateBtn = document.getElementById("otaUpdateBtn");
-      status.textContent = "Checking latest release...";
-      updateBtn.disabled = true;
-      latestOta = null;
-      updateAvailable = false;
-
-      try {
-        const res = await fetch("/ota/check", { cache: "no-store" });
-        if (!res.ok) throw new Error("Check failed");
-        const data = await res.json();
-
-        if (data.pending) {
-          status.textContent = "Checking latest release...";
-          setTimeout(checkOta, 1500);
-          return;
-        }
-
-        if (!data.ok) {
-          status.textContent = "Release check failed.";
-          return;
-        }
-
-        const current = data.current || "?";
-        const latest = data.latest || "?";
-        updateAvailable = !!data.updateAvailable;
-        latestOta = data.url || null;
-
-        if (updateAvailable) {
-          status.textContent = `Update available: ${current} -> ${latest}`;
-          updateBtn.disabled = false;
-        } else {
-          status.textContent = `Up to date: ${current}`;
-        }
-      } catch (err) {
-        status.textContent = "Release check failed.";
-        console.error(err);
-      }
-    }
-
-    document.getElementById("otaCheckBtn").addEventListener("click", checkOta);
-
-    document.getElementById("otaUpdateBtn").addEventListener("click", async () => {
-      if (!updateAvailable || !latestOta) {
-        alertToast("warning", "No update available.");
-        return;
-      }
-
-      document.getElementById("otaUpdateBtn").disabled = true;
-      document.getElementById("otaCheckBtn").disabled = true;
-      try {
-        const res = await fetch("/ota/update", { method: "POST" });
-        if (res.status === 202 || res.ok) {
-          alertToast("success", "Auto update queued. Rebooting...");
-        } else {
-          alertToast("error", "Auto update failed: " + res.status);
-        }
-      } catch {
-        alertToast("error", "Auto update failed.");
-      } finally {
-        document.getElementById("otaCheckBtn").disabled = false;
-      }
-    });
-
-    checkOta();
 
     document.getElementById("backupBtn").addEventListener("click", () => {
       location.href = "/config/backup?pretty=1";

@@ -11,11 +11,13 @@ PROGNAME = env.subst("${PROGNAME}")
 APP_BIN = os.path.normpath(os.path.join(BUILD_DIR, f"{PROGNAME}.bin"))
 MERGED_BIN = os.path.normpath(os.path.join(BUILD_DIR, f"{PROGNAME}_merged.bin"))
 BOARD_CONFIG = env.BoardConfig()
+ENV_NAME = env.subst("$PIOENV")
 
 project_name = env.GetProjectOption("custom_source_name") or "Firmware"
 version = env.GetProjectOption("custom_source_version") or "0.0.0"
-firmware_filename_merged = f"{project_name}_V{version}.bin"
-firmware_filename_ota = f"{project_name}_V{version}.bin.ota"
+env_suffix = ENV_NAME or "env"
+firmware_filename_merged = f"{project_name}_{env_suffix}_V{version}.bin"
+firmware_filename_ota = f"{project_name}_{env_suffix}_V{version}.bin.ota"
 
 firmware_path_merged = os.path.normpath(os.path.join(env.subst("$PROJECT_DIR"), ".firmware", firmware_filename_merged))
 firmware_path_ota = os.path.normpath(os.path.join(env.subst("$PROJECT_DIR"), ".firmware", firmware_filename_ota))
