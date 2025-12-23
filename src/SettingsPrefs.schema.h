@@ -13,26 +13,24 @@
 
 #define SETTINGS_ITEMS(X) \
   /* ---- Network section ---- */ \
-  X(STRING, "network",   "deviceName",         deviceName,      "BMSC2MQTT", 0,    0) \
+  X(STRING, "network",   "deviceName",         deviceName,      "BambuBeacon", 0,    0) \
   X(STRING, "network",   "wifiSsid0",          wifiSsid0,       "",          0,    0) \
   X(STRING, "network",   "wifiBssid0",         wifiBssid0,      "",          0,    0) \
-  X(STRING, "network",   "wifiPass0",      wifiPass0,   "",          0,    0) \
+  X(STRING, "network",   "wifiPass0",          wifiPass0,       "",          0,    0) \
   X(STRING, "network",   "wifiSsid1",          wifiSsid1,       "",          0,    0) \
-  X(STRING, "network",   "wifiPass1",      wifiPass1,   "",          0,    0) \
+  X(STRING, "network",   "wifiPass1",          wifiPass1,       "",          0,    0) \
   X(STRING, "network",   "staticIP",           staticIP,        "",          0,    0) \
   X(STRING, "network",   "staticGW",           staticGW,        "",          0,    0) \
   X(STRING, "network",   "staticSN",           staticSN,        "",          0,    0) \
   X(STRING, "network",   "staticDNS",          staticDNS,       "",          0,    0) \
   X(STRING, "network",   "webUIuser",          webUIuser,       "",          0,    0) \
-  X(STRING, "network",   "webUIPass",      webUIPass,   "",          0,    0) \
+  X(STRING, "network",   "webUIPass",          webUIPass,       "",          0,    0) \
   \
-  /* ---- MQTT section ---- */ \
-  X(STRING, "mqtt",      "host",               mqttHost,        "",         0,      0) \
-  X(STRING, "mqtt",      "user",               mqttUser,        "bblp",     0,      0) \
-  X(STRING, "mqtt",      "password",           mqttPassword,    "",         0,      0) \
-  X(UINT16, "mqtt",      "port",               mqttPort,        8883,       1,  65535) \
   /* ---- Device section ---- */ \
   X(STRING, "device",   "printerUSN",         printerUSN,       "",          0,     0) \
   X(STRING, "device",   "printerIP",          printerIP,        "",          0,     0) \
   X(STRING, "device",   "printerAC",          printerAC,        "",          0,     0) \
+  X(UINT16, "device",   "LEDperSeg",          LEDperSeg,        12,          0,     24) \
+  X(UINT16, "device",   "LEDSegments",        LEDSegments,      3,           2,     3) \
+  X(UINT16, "device",   "LEDBrightness",      LEDBrightness,    50,         0,     255) \
   /* End of settings items */

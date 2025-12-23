@@ -60,13 +60,24 @@ void WiFiManager::startAP() {
   WiFi.disconnect(true, true);
   delay(150);
 
-  WiFi.mode(WIFI_AP);
+  // IMPORTANT: AP+STA mode enables stable WiFi scanning while AP is active
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255,255,255,0));
 
   String apName = String("BambuBeacon-") + String((uint32_t)ESP.getEfuseMac(), HEX);
   WiFi.softAP(apName.c_str()); // open for now
 
   dns.start(53, "*", apIP);
+
+  // Kick an async scan early so the setup page can show networks immediately
+  WiFi.scanDelete();
+  WiFi.scanNetworks(true /* async */, true /* show hidden */);
+
+  // Optional pre-warm: wait briefly for the first scan results (not in AsyncTCP context)
+  const unsigned long t0 = millis();
+  while (WiFi.scanComplete() == WIFI_SCAN_RUNNING && (millis() - t0) < 2500UL) {
+    delay(20);
+  }
 }
 
 void WiFiManager::begin() {
