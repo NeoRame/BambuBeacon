@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>BambuBeacon Maintenance</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <canvas id="particleCanvas"></canvas>
+
+  <div id="container">
+    <div id="header">
+      <a href="/"><img id="logo" src="/bmsc.svg" alt="Logo" /></a>
+      <h1>BambuBeacon Maintenance</h1>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Firmware Update</div>
+
+      <label for="fwFile">Firmware (.ota)</label>
+      <input type="file" id="fwFile" accept=".ota,application/octet-stream" />
+
+      <div class="progress-wrap" aria-live="polite">
+        <div class="progress-bar"><span id="fwProgressBar"></span></div>
+        <div class="progress-label">
+          <span id="fwProgressText">0%</span>
+          <span id="fwProgressSize">0 / 0</span>
+        </div>
+      </div>
+
+      <div class="button-stack actions">
+        <button type="button" class="btn" id="fwUploadBtn">Upload Firmware</button>
+      </div>
+      <div class="note">Device reboots after a successful update.</div>
+
+      <div class="detailSplitter">Auto Update</div>
+      <div class="inline-info" id="otaStatus">Checking latest release...</div>
+      <div class="button-stack actions">
+        <button type="button" class="btn btn-outline" id="otaCheckBtn">Check for updates</button>
+        <button type="button" class="btn" id="otaUpdateBtn" disabled>Auto Update</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Config Backup / Restore</div>
+
+      <div class="button-stack">
+        <button type="button" class="btn btn-outline" id="backupBtn">Download Backup</button>
+      </div>
+
+      <div class="detailSplitter">Restore</div>
+
+      <label for="restoreFile">Backup file (.json)</label>
+      <input type="file" id="restoreFile" accept=".json,application/json" />
+
+      <div class="button-stack actions">
+        <button type="button" class="btn" id="restoreBtn" disabled>Restore Config</button>
+        <button type="button" class="btn btn-outline" onclick="location.href='/'">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"><span id="toast-icon">i</span><span id="toast-msg">Placeholder</span></div>
+
+  <script src="/backgroundCanvas.js"></script>
+  <script>
+    function alertToast(type, message) {
+      const toast = document.getElementById("toast");
+      const icon = document.getElementById("toast-icon");
+      const msg  = document.getElementById("toast-msg");
+
+      let iconChar = "i";
+      let borderColor = "rgba(255,255,255,0.18)";
+      const css = getComputedStyle(document.documentElement);
+
+      switch (String(type).toLowerCase()) {
+        case "success": iconChar = "ok"; borderColor = css.getPropertyValue("--bb-primary"); break;
+        case "error":   iconChar = "!";  borderColor = css.getPropertyValue("--bb-warning"); break;
+        case "warning": iconChar = "!";  borderColor = css.getPropertyValue("--bb-highlight"); break;
+        default:        iconChar = "i";
+      }
+
+      toast.style.borderLeftColor = (borderColor || "").trim() || "#00E5FF";
+      icon.textContent = iconChar;
+      msg.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3000);
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes <= 0) return "0 B";
+      const units = ["B", "KB", "MB", "GB"];
+      let idx = 0;
+      let v = bytes;
+      while (v >= 1024 && idx < units.length - 1) {
+        v /= 1024;
+        idx++;
+      }
+      return v.toFixed(v >= 10 || idx === 0 ? 0 : 1) + " " + units[idx];
+    }
+
+    function setProgress(percent, loaded, total) {
+      const pct = Math.max(0, Math.min(100, percent || 0));
+      document.getElementById("fwProgressBar").style.width = pct.toFixed(1) + "%";
+      document.getElementById("fwProgressText").textContent = pct.toFixed(0) + "%";
+      document.getElementById("fwProgressSize").textContent =
+        formatBytes(loaded || 0) + " / " + formatBytes(total || 0);
+    }
+
+    function setFirmwareBusy(busy) {
+      document.getElementById("fwUploadBtn").disabled = busy;
+      document.getElementById("fwFile").disabled = busy;
+    }
+
+    function setRestoreBusy(busy) {
+      document.getElementById("restoreBtn").disabled = busy;
+      document.getElementById("restoreFile").disabled = busy;
+      document.getElementById("backupBtn").disabled = busy;
+    }
+
+    document.getElementById("fwUploadBtn").addEventListener("click", () => {
+      const file = document.getElementById("fwFile").files[0];
+      if (!file) {
+        alertToast("warning", "Select a firmware file first.");
+        return;
+      }
+
+      setFirmwareBusy(true);
+      setProgress(0, 0, file.size || 0);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/update");
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) {
+          setProgress((e.loaded / e.total) * 100, e.loaded, e.total);
+        }
+      });
+      xhr.onload = () => {
+        setFirmwareBusy(false);
+        if (xhr.status === 200) {
+          setProgress(100, file.size || 0, file.size || 0);
+          alertToast("success", "Firmware uploaded. Rebooting...");
+        } else {
+          alertToast("error", "Firmware upload failed: " + xhr.status);
+        }
+      };
+      xhr.onerror = () => {
+        setFirmwareBusy(false);
+        alertToast("error", "Firmware upload failed.");
+      };
+
+      const data = new FormData();
+      data.append("firmware", file);
+      xhr.send(data);
+    });
+
+    let latestOta = null;
+    let updateAvailable = false;
+
+    async function checkOta() {
+      const status = document.getElementById("otaStatus");
+      const updateBtn = document.getElementById("otaUpdateBtn");
+      status.textContent = "Checking latest release...";
+      updateBtn.disabled = true;
+      latestOta = null;
+      updateAvailable = false;
+
+      try {
+        const res = await fetch("/ota/check", { cache: "no-store" });
+        if (!res.ok) throw new Error("Check failed");
+        const data = await res.json();
+
+        if (data.pending) {
+          status.textContent = "Checking latest release...";
+          setTimeout(checkOta, 1500);
+          return;
+        }
+
+        if (!data.ok) {
+          status.textContent = "Release check failed.";
+          return;
+        }
+
+        const current = data.current || "?";
+        const latest = data.latest || "?";
+        updateAvailable = !!data.updateAvailable;
+        latestOta = data.url || null;
+
+        if (updateAvailable) {
+          status.textContent = `Update available: ${current} -> ${latest}`;
+          updateBtn.disabled = false;
+        } else {
+          status.textContent = `Up to date: ${current}`;
+        }
+      } catch (err) {
+        status.textContent = "Release check failed.";
+        console.error(err);
+      }
+    }
+
+    document.getElementById("otaCheckBtn").addEventListener("click", checkOta);
+
+    document.getElementById("otaUpdateBtn").addEventListener("click", async () => {
+      if (!updateAvailable || !latestOta) {
+        alertToast("warning", "No update available.");
+        return;
+      }
+
+      document.getElementById("otaUpdateBtn").disabled = true;
+      document.getElementById("otaCheckBtn").disabled = true;
+      try {
+        const res = await fetch("/ota/update", { method: "POST" });
+        if (res.status === 202 || res.ok) {
+          alertToast("success", "Auto update queued. Rebooting...");
+        } else {
+          alertToast("error", "Auto update failed: " + res.status);
+        }
+      } catch {
+        alertToast("error", "Auto update failed.");
+      } finally {
+        document.getElementById("otaCheckBtn").disabled = false;
+      }
+    });
+
+    checkOta();
+
+    document.getElementById("backupBtn").addEventListener("click", () => {
+      location.href = "/config/backup?pretty=1";
+    });
+
+    document.getElementById("restoreFile").addEventListener("change", () => {
+      const file = document.getElementById("restoreFile").files[0];
+      document.getElementById("restoreBtn").disabled = !file;
+    });
+
+    document.getElementById("restoreBtn").addEventListener("click", () => {
+      const file = document.getElementById("restoreFile").files[0];
+      if (!file) {
+        alertToast("warning", "Select a backup file first.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          setRestoreBusy(true);
+          const res = await fetch("/config/restore", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: reader.result || ""
+          });
+
+          if (res.ok) {
+            alertToast("success", "Config restored. Rebooting...");
+          } else {
+            alertToast("error", "Restore failed: " + res.status);
+          }
+        } catch {
+          alertToast("error", "Restore failed.");
+        } finally {
+          setRestoreBusy(false);
+        }
+      };
+      reader.onerror = () => alertToast("error", "Failed to read backup file.");
+      reader.readAsText(file);
+    });
+  </script>
+</body>
+</html>

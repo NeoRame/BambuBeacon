@@ -93,6 +93,50 @@ void LedController::ingestBambuReport(JsonObjectConst report, uint32_t nowMs) {
   markDirty();
 }
 
+void LedController::setMqttConnected(bool connected, uint32_t nowMs) {
+  if (connected) {
+    _st.hasMqtt = true;
+    _st.lastMqttMs = nowMs;
+    markDirty();
+  }
+}
+
+void LedController::setHmsSeverity(uint8_t sev) {
+  if (_st.hmsSev != sev) {
+    _st.hmsSev = sev;
+    markDirty();
+  }
+}
+
+void LedController::setWifiConnected(bool connected) {
+  if (_st.wifiOk != connected) {
+    _st.wifiOk = connected;
+    markDirty();
+  }
+}
+
+void LedController::setPrintProgress(uint8_t percent) {
+  if (_st.printProgress != percent) {
+    _st.printProgress = percent;
+    markDirty();
+  }
+}
+
+void LedController::setDownloadProgress(uint8_t percent) {
+  if (_st.downloadProgress != percent) {
+    _st.downloadProgress = percent;
+    markDirty();
+  }
+}
+
+void LedController::setThermalState(bool heating, bool cooling) {
+  if (_st.heating != heating || _st.cooling != cooling) {
+    _st.heating = heating;
+    _st.cooling = cooling;
+    markDirty();
+  }
+}
+
 void LedController::startSelfTest() {
   startBootTest(millis());
 }
@@ -164,10 +208,8 @@ void LedController::tickBootTest(uint32_t nowMs) {
   if ((int32_t)(nowMs - _bootNextMs) < 0) return;
 
   if (_bootSeg >= _segments) {
-    // Done -> no flash, go to default
+    // Done -> stop animation; render loop will take over without forcing white
     _bootTestActive = false;
-    setGlobalIdle();
-    markDirty();
     return;
   }
 
@@ -198,9 +240,78 @@ void LedController::deriveStateFromReport(JsonObjectConst report, uint32_t nowMs
 }
 
 void LedController::render(uint32_t nowMs) {
-  (void)nowMs;
-  if (!_st.hasMqtt) setNoConnection();
-  else setGlobalIdle();
+  const uint32_t MQTT_STALE_MS = 15000;
+  const bool mqttOk = _st.hasMqtt && (uint32_t)(nowMs - _st.lastMqttMs) <= MQTT_STALE_MS;
+
+  if (!mqttOk) {
+    setNoConnection();
+    return;
+  }
+
+  clear(false);
+
+  // LED plan (English, keep synced with behavior):
+  // - Ring 0 (top): Green steady when OK/working. Error/Fatal = two red LEDs opposite, rotating (beacon).
+  // - Ring 1 (middle): Heating = orange-red sawtooth pulse. Cooling after finish = dark blue inverted sawtooth
+  //   until bed < 45C. Warning = amber pulse if not heating/cooling.
+  // - Ring 2 (bottom): Download progress = blue fill, Print progress = green fill, WiFi reconnect = purple blink.
+  // Colorblind-friendly: avoid steady green + steady yellow on the same ring; warnings use pulse, errors use motion.
+
+  if (_st.hmsSev >= 3) {
+    if (_segments >= 1 && _perSeg >= 2) {
+      const uint16_t pos = (nowMs / 120) % _perSeg;
+      const uint16_t opp = (pos + (_perSeg / 2)) % _perSeg;
+      const uint16_t base = segStart(0);
+      if (base + pos < _count) _leds[base + pos] = CRGB::Red;
+      if (base + opp < _count) _leds[base + opp] = CRGB::Red;
+    }
+  } else {
+    if (_segments >= 1) setSegmentColor(0, CRGB::Green, false);
+  }
+
+  if (_segments >= 2) {
+    if (_st.cooling) {
+      uint8_t saw = (nowMs / 8) & 0xFF;
+      uint8_t level = 255 - saw;
+      CRGB c = CRGB(0, 0, 120);
+      c.nscale8_video(scale8(level, 180));
+      setSegmentColor(1, c, false);
+    } else if (_st.heating) {
+      uint8_t saw = (nowMs / 8) & 0xFF;
+      uint8_t level = saw;
+      CRGB c = CRGB(255, 80, 0);
+      c.nscale8_video(scale8(level, 200) + 30);
+      setSegmentColor(1, c, false);
+    } else if (_st.hmsSev == 2) {
+      uint8_t pulse = sin8((nowMs / 10) & 0xFF);
+      uint8_t level = scale8(pulse, 200) + 30;
+      CRGB c = CRGB(255, 150, 0);
+      c.nscale8_video(level);
+      setSegmentColor(1, c, false);
+    }
+  }
+
+  if (_segments >= 3) {
+    if (!_st.wifiOk) {
+      uint8_t pulse = sin8((nowMs / 6) & 0xFF);
+      uint8_t level = scale8(pulse, 200) + 30;
+      CRGB c = CRGB(160, 0, 180);
+      c.nscale8_video(level);
+      setSegmentColor(2, c, false);
+    } else if (_st.downloadProgress <= 100 && _st.downloadProgress < 100) {
+      const uint16_t lit = (uint32_t)_perSeg * _st.downloadProgress / 100;
+      for (uint16_t i = 0; i < _perSeg && i < lit; i++) {
+        _leds[segStart(2) + i] = CRGB::Blue;
+      }
+    } else if (_st.printProgress <= 100 && _st.printProgress < 100) {
+      const uint16_t lit = (uint32_t)_perSeg * _st.printProgress / 100;
+      for (uint16_t i = 0; i < _perSeg && i < lit; i++) {
+        _leds[segStart(2) + i] = CRGB::Green;
+      }
+    }
+  }
+
+  markDirty();
 }
 
 void LedController::tick(uint32_t nowMs) {

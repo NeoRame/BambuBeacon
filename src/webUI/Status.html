@@ -16,6 +16,14 @@
     </div>
 
     <div class="panel">
+      <div class="panel-title">LED Brightness</div>
+      <div class="slider-row">
+        <input type="range" id="ledBrightness" min="0" max="255" step="1" />
+        <div class="slider-value" id="ledBrightnessValue">--</div>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-title">Device</div>
       <div id="deviceInfo" style="color: var(--bb-text-2); font-weight: 650;">Loading…</div>
     </div>
@@ -24,7 +32,8 @@
       <div class="panel-title">Setup</div>
       <div class="button-stack">
         <button class="btn" onclick="location.href='/wifisetup'">Wi-Fi / Network</button>
-        <button class="btn btn-outline" disabled>Printer Setup (coming soon)</button>
+        <button class="btn btn-outline" onclick="location.href='/printersetup'">Printer Setup</button>
+        <button class="btn btn-outline" onclick="location.href='/maintenance'">Maintenance</button>
       </div>
     </div>
   </div>
@@ -48,6 +57,64 @@
       }
     }
     loadInfo();
+
+    const ledSlider = document.getElementById("ledBrightness");
+    const ledValue = document.getElementById("ledBrightnessValue");
+    let ledSaveTimer = null;
+    let lastSentBrightness = null;
+
+    function renderLedValue(v) {
+      ledValue.textContent = String(v);
+    }
+
+    async function loadLedBrightness() {
+      try {
+        const res = await fetch("/ledconf.json", { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed");
+        const j = await res.json();
+        const b = (j.ledBrightness != null) ? Number(j.ledBrightness) : 0;
+        ledSlider.value = b;
+        renderLedValue(b);
+        lastSentBrightness = b;
+      } catch {
+        renderLedValue("?");
+      }
+    }
+
+    async function saveLedBrightness(value) {
+      const body = `brightness=${encodeURIComponent(value)}`;
+      const res = await fetch("/setLedBrightness", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body
+      });
+      if (!res.ok) throw new Error("Save failed");
+    }
+
+    function queueSaveBrightness(value) {
+      if (ledSaveTimer) clearTimeout(ledSaveTimer);
+      ledSaveTimer = setTimeout(async () => {
+        if (value === lastSentBrightness) return;
+        try {
+          await saveLedBrightness(value);
+          lastSentBrightness = value;
+        } catch {}
+      }, 120);
+    }
+
+    ledSlider.addEventListener("input", () => {
+      const v = Number(ledSlider.value);
+      renderLedValue(v);
+      queueSaveBrightness(v);
+    });
+
+    ledSlider.addEventListener("change", () => {
+      const v = Number(ledSlider.value);
+      renderLedValue(v);
+      queueSaveBrightness(v);
+    });
+
+    loadLedBrightness();
   </script>
 </body>
 </html>

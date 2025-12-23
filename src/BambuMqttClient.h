@@ -4,7 +4,8 @@
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <WebSerial.h>
-#include <PsychicMqttClient.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
 
 #include "SettingsPrefs.h"  // provides Settings + settings.get.printerIP/printerUSN/printerAC
 
@@ -46,11 +47,11 @@ public:
   void connect();
   void disconnect();
 
-  // Not const because PsychicMqttClient::connected() is not const
   bool isConnected();
 
   bool publishRequest(const JsonDocument& doc, bool retain = false);
   void onReport(ReportCallback cb);
+  void handleMqttMessage(char* topic, uint8_t* payload, unsigned int length);
 
   // HMS / status
   Severity topSeverity() const;
@@ -60,6 +61,11 @@ public:
   size_t getActiveEvents(HmsEvent* out, size_t maxOut) const;
 
   const String& gcodeState() const;
+  uint8_t printProgress() const;
+  uint8_t downloadProgress() const;
+  float bedTemp() const;
+  float bedTarget() const;
+  bool bedValid() const;
 
   const String& topicReport() const;
   const String& topicRequest() const;
@@ -88,7 +94,8 @@ private:
 private:
   Settings *_settings = nullptr;
 
-  PsychicMqttClient _mqtt;
+  WiFiClientSecure _net;
+  PubSubClient _mqtt;
   bool _subscribed = false;
   uint32_t _lastKickMs = 0;
 
@@ -112,6 +119,11 @@ private:
   uint8_t _eventsCap = 20;
 
   String _gcodeState;
+  uint8_t _printProgress = 255;    // 0-100, 255 = unknown
+  uint8_t _downloadProgress = 255; // 0-100, 255 = unknown
+  float _bedTemp = 0.0f;
+  float _bedTarget = 0.0f;
+  bool _bedValid = false;
 
   HmsEvent* _events = nullptr;
 

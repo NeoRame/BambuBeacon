@@ -1,4 +1,7 @@
 #include "bblPrinterDiscovery.h"
+#include "BambuMqttClient.h"
+
+extern BambuMqttClient bambu;
 
 BBLPrinterDiscovery::BBLPrinterDiscovery() {}
 
@@ -40,6 +43,11 @@ int BBLPrinterDiscovery::knownCount() const
 const BBLPrinter* BBLPrinterDiscovery::knownPrinters() const
 {
   return knownPrinters_;
+}
+
+bool BBLPrinterDiscovery::isBusy() const
+{
+  return state_ != State::IDLE;
 }
 
 void BBLPrinterDiscovery::forceRescan(unsigned long minDelayMs)
@@ -215,6 +223,8 @@ void BBLPrinterDiscovery::readPacketsNonBlocking(unsigned long now)
                          storedIP ? storedIP : "(empty)", currentIP.c_str());
         settings.set.printerIP(currentIP.c_str());
         settings.save();
+        bambu.reloadFromSettings();
+        if (WiFi.status() == WL_CONNECTED) bambu.connect();
       }
     }
 

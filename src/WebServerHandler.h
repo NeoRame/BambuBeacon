@@ -15,4 +15,6 @@ private:
 
   void handleNetlist(AsyncWebServerRequest* req);
   void handleSubmitConfig(AsyncWebServerRequest* req);
+  void handlePrinterDiscovery(AsyncWebServerRequest* req);
+  void handleSubmitPrinterConfig(AsyncWebServerRequest* req);
 };

@@ -1,8 +1,19 @@
 #include "BambuMqttClient.h"
 
+namespace {
+BambuMqttClient* s_instance = nullptr;
+constexpr uint32_t kTlsHandshakeTimeoutMs = 5000;
+constexpr uint32_t kSocketTimeoutMs = 5000;
+void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
+  if (s_instance) s_instance->handleMqttMessage(topic, payload, length);
+}
+}
+
 const char* BambuMqttClient::kUser = "bblp";
 
-BambuMqttClient::BambuMqttClient() {}
+BambuMqttClient::BambuMqttClient()
+: _net(),
+  _mqtt(_net) {}
 BambuMqttClient::~BambuMqttClient() {
   if (_events) {
     delete[] _events;
@@ -29,46 +40,18 @@ bool BambuMqttClient::begin(Settings &settings) {
   }
   _events = new HmsEvent[_eventsCap];
 
-  _mqtt.setServer(_serverUri.c_str());
-  _mqtt.setClientId(_clientId.c_str());
-  _mqtt.setCredentials(kUser, _accessCode.c_str());
+  _net.setInsecure();
+#if defined(ARDUINO_ARCH_ESP32)
+  _net.setHandshakeTimeout(kTlsHandshakeTimeoutMs);
+#endif
+  _net.setTimeout(kSocketTimeoutMs);
+  _mqtt.setServer(_printerIP.c_str(), kPort);
+  _mqtt.setBufferSize(4096);
 
-  // TLS insecure by design: no CA/certs configured.
-  webSerial.println("[MQTT] TLS: no CA bundle configured (insecure / no-verify expected).");
+  s_instance = this;
+  _mqtt.setCallback(mqttCallback);
 
-  _mqtt.onConnect([this](bool sessionPresent) {
-    webSerial.printf("[MQTT] Connected (session=%d)\n", (int)sessionPresent);
-    _subscribed = false;
-    subscribeReportOnce();
-  });
-
-  _mqtt.onDisconnect([this](bool) {
-    webSerial.println("[MQTT] Disconnected");
-    _subscribed = false;
-  });
-
-  // esp_mqtt_error_codes is not convertible in your toolchain -> raw dump
-  _mqtt.onError([](esp_mqtt_error_codes error) {
-    webSerial.println("[MQTT] Error callback triggered");
-    const uint8_t* p = reinterpret_cast<const uint8_t*>(&error);
-    const size_t n = sizeof(error);
-
-    webSerial.printf("[MQTT] Error raw (%u bytes): ", (unsigned)n);
-    for (size_t i = 0; i < n; i++) {
-      webSerial.printf("%02X", p[i]);
-      if (i + 1 < n) webSerial.print(" ");
-    }
-    webSerial.print("\n");
-  });
-
-  _mqtt.onSubscribe([](int msgId) {
-    webSerial.printf("[MQTT] Subscribed (msgId=%d)\n", msgId);
-  });
-
-  _mqtt.onTopic(_topicReport.c_str(), 0,
-    [this](const char* /*topic*/, const char* payload, int, int, bool) {
-      handleReportJson(payload);
-    });
+  webSerial.println("[MQTT] TLS: insecure mode enabled.");
 
   _ready = true;
 
@@ -104,9 +87,13 @@ void BambuMqttClient::reloadFromSettings() {
   }
   _events = new HmsEvent[_eventsCap];
 
-  _mqtt.setServer(_serverUri.c_str());
-  _mqtt.setClientId(_clientId.c_str());
-  _mqtt.setCredentials(kUser, _accessCode.c_str());
+  _net.setInsecure();
+#if defined(ARDUINO_ARCH_ESP32)
+  _net.setHandshakeTimeout(kTlsHandshakeTimeoutMs);
+#endif
+  _net.setTimeout(kSocketTimeoutMs);
+  _mqtt.setServer(_printerIP.c_str(), kPort);
+  _mqtt.setBufferSize(4096);
 
   _subscribed = false;
   _ready = true;
@@ -151,9 +138,18 @@ void BambuMqttClient::connect() {
     return;
   }
 
+  if (_mqtt.connected()) return;
+
   webSerial.printf("[MQTT] Connecting to %s (clientId=%s)\n",
                    _serverUri.c_str(), _clientId.c_str());
-  _mqtt.connect();
+  const bool ok = _mqtt.connect(_clientId.c_str(), kUser, _accessCode.c_str());
+  if (ok) {
+    webSerial.println("[MQTT] Connected");
+    _subscribed = false;
+    subscribeReportOnce();
+  } else {
+    webSerial.printf("[MQTT] Connect failed (state=%d)\n", _mqtt.state());
+  }
 }
 
 void BambuMqttClient::disconnect() {
@@ -174,11 +170,14 @@ void BambuMqttClient::loopTick() {
   }
 
   if (!_mqtt.connected()) {
+    _subscribed = false;
     const uint32_t now = millis();
     if (now - _lastKickMs > 2000) {
       _lastKickMs = now;
       connect();
     }
+  } else {
+    _mqtt.loop();
   }
 
   expireEvents(millis());
@@ -190,9 +189,9 @@ bool BambuMqttClient::publishRequest(const JsonDocument& doc, bool retain) {
   String out;
   serializeJson(doc, out);
 
-  const int msgId = _mqtt.publish(_topicRequest.c_str(), 0, retain, out.c_str());
-  webSerial.printf("[MQTT] Publish request msgId=%d len=%u\n", msgId, (unsigned)out.length());
-  return (msgId >= 0);
+  const bool ok = _mqtt.publish(_topicRequest.c_str(), out.c_str(), retain);
+  webSerial.printf("[MQTT] Publish request ok=%d len=%u\n", ok ? 1 : 0, (unsigned)out.length());
+  return ok;
 }
 
 void BambuMqttClient::onReport(ReportCallback cb) {
@@ -202,6 +201,11 @@ void BambuMqttClient::onReport(ReportCallback cb) {
 const String& BambuMqttClient::topicReport() const { return _topicReport; }
 const String& BambuMqttClient::topicRequest() const { return _topicRequest; }
 const String& BambuMqttClient::gcodeState() const { return _gcodeState; }
+uint8_t BambuMqttClient::printProgress() const { return _printProgress; }
+uint8_t BambuMqttClient::downloadProgress() const { return _downloadProgress; }
+float BambuMqttClient::bedTemp() const { return _bedTemp; }
+float BambuMqttClient::bedTarget() const { return _bedTarget; }
+bool BambuMqttClient::bedValid() const { return _bedValid; }
 
 void BambuMqttClient::subscribeReportOnce() {
   if (_subscribed) return;
@@ -209,6 +213,19 @@ void BambuMqttClient::subscribeReportOnce() {
   webSerial.printf("[MQTT] Subscribing to %s\n", _topicReport.c_str());
   _mqtt.subscribe(_topicReport.c_str(), 0);
   _subscribed = true;
+}
+
+void BambuMqttClient::handleMqttMessage(char* topic, uint8_t* payload, unsigned int length) {
+  if (!topic || !payload || length == 0) return;
+  if (_topicReport.isEmpty()) return;
+  if (strcmp(topic, _topicReport.c_str()) != 0) return;
+
+  String msg;
+  msg.reserve(length + 1);
+  for (unsigned int i = 0; i < length; i++) {
+    msg += (char)payload[i];
+  }
+  handleReportJson(msg.c_str());
 }
 
 void BambuMqttClient::handleReportJson(const char* payload) {
@@ -223,6 +240,55 @@ void BambuMqttClient::handleReportJson(const char* payload) {
     _gcodeState = (const char*)doc["print"]["gcode_state"];
   } else if (doc["gcode_state"].is<const char*>()) {
     _gcodeState = (const char*)doc["gcode_state"];
+  }
+
+  auto readInt = [](JsonVariant v, int& out) -> bool {
+    if (v.is<int>()) { out = v.as<int>(); return true; }
+    if (v.is<unsigned int>()) { out = (int)v.as<unsigned int>(); return true; }
+    if (v.is<float>()) { out = (int)v.as<float>(); return true; }
+    if (v.is<const char*>()) { out = atoi(v.as<const char*>()); return true; }
+    return false;
+  };
+
+  auto readFloat = [](JsonVariant v, float& out) -> bool {
+    if (v.is<float>()) { out = v.as<float>(); return true; }
+    if (v.is<int>()) { out = (float)v.as<int>(); return true; }
+    if (v.is<const char*>()) { out = (float)atof(v.as<const char*>()); return true; }
+    return false;
+  };
+
+  int p = -1;
+  if (readInt(doc["print"]["mc_percent"], p) ||
+      readInt(doc["mc_percent"], p) ||
+      readInt(doc["print"]["percent"], p) ||
+      readInt(doc["percent"], p)) {
+    if (p >= 0 && p <= 100) _printProgress = (uint8_t)p;
+  }
+
+  int dl = -1;
+  if (readInt(doc["print"]["download_progress"], dl) ||
+      readInt(doc["print"]["download_percent"], dl) ||
+      readInt(doc["print"]["dl_percent"], dl) ||
+      readInt(doc["print"]["dl_progress"], dl) ||
+      readInt(doc["print"]["prepare_per"], dl) ||
+      readInt(doc["print"]["gcode_file_prepare_percent"], dl) ||
+      readInt(doc["download_progress"], dl) ||
+      readInt(doc["download_percent"], dl)) {
+    if (dl >= 0 && dl <= 100) _downloadProgress = (uint8_t)dl;
+  }
+
+  float bed = 0.0f;
+  float bedTarget = 0.0f;
+  bool bedOk = readFloat(doc["print"]["bed_temper"], bed) ||
+               readFloat(doc["print"]["bed_temperature"], bed) ||
+               readFloat(doc["bed_temper"], bed);
+  bool targetOk = readFloat(doc["print"]["bed_target_temper"], bedTarget) ||
+                  readFloat(doc["print"]["bed_target_temperature"], bedTarget) ||
+                  readFloat(doc["bed_target_temper"], bedTarget);
+  if (bedOk && targetOk) {
+    _bedTemp = bed;
+    _bedTarget = bedTarget;
+    _bedValid = true;
   }
 
   parseHmsFromDoc(doc);

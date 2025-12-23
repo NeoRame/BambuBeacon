@@ -2,6 +2,7 @@
 #include "main.h"
 #include "LedController.h"
 #include <ESPAsyncWebServer.h>
+#include <WiFi.h>
 #include "bblPrinterDiscovery.h"
 #include "SettingsPrefs.h"
 #include "WiFiManager.h"
@@ -29,8 +30,7 @@ void setup() {
   web.begin();
 
   bambu.onReport([](const JsonDocument& doc) {
-    // optional
-
+    ledsCtrl.ingestBambuReport(doc.as<JsonObjectConst>(), millis());
   });
  bambu.begin(settings);
 
@@ -46,7 +46,31 @@ printerDiscovery.forceRescan(2000UL);      // first scan shortly after boot
 
 void loop() {
   wifiManager.loop();
-  bambu.loopTick();
-  ledsCtrl.loop();
   printerDiscovery.update();
+  if (bambu.isConnected() || !printerDiscovery.isBusy()) {
+    bambu.loopTick();
+  }
+  const uint32_t nowMs = millis();
+  ledsCtrl.setMqttConnected(bambu.isConnected(), nowMs);
+  ledsCtrl.setHmsSeverity((uint8_t)bambu.topSeverity());
+  ledsCtrl.setWifiConnected(WiFi.status() == WL_CONNECTED);
+
+  const String& gstate = bambu.gcodeState();
+  const bool finished = (gstate == "FINISH" || gstate == "FINISHED" || gstate == "DONE");
+  const bool printing = (gstate == "RUNNING" || gstate == "PRINTING" || gstate == "PAUSED" || gstate == "PREPARE");
+
+  uint8_t dl = bambu.downloadProgress();
+  ledsCtrl.setDownloadProgress((dl <= 100 && dl < 100) ? dl : 255);
+
+  uint8_t pp = bambu.printProgress();
+  ledsCtrl.setPrintProgress((printing && pp <= 100 && pp < 100) ? pp : 255);
+
+  bool heating = false;
+  bool cooling = false;
+  if (bambu.bedValid()) {
+    heating = !finished && (bambu.bedTarget() > (bambu.bedTemp() + 2.0f));
+    cooling = finished && (bambu.bedTemp() > 45.0f);
+  }
+  ledsCtrl.setThermalState(heating, cooling);
+  ledsCtrl.loop();
 }

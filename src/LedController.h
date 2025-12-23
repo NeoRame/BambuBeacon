@@ -16,6 +16,12 @@ public:
 
   void applySettingsFrom(Settings& settings);
   void ingestBambuReport(JsonObjectConst report, uint32_t nowMs);
+  void setMqttConnected(bool connected, uint32_t nowMs);
+  void setHmsSeverity(uint8_t sev);
+  void setWifiConnected(bool connected);
+  void setPrintProgress(uint8_t percent);
+  void setDownloadProgress(uint8_t percent);
+  void setThermalState(bool heating, bool cooling);
 
   void startSelfTest();
 
@@ -46,6 +52,12 @@ private:
     GlobalState global = GlobalState::Offline;
     bool     hasMqtt = false;
     uint32_t lastMqttMs = 0;
+    uint8_t  hmsSev = 0; // 0=None, 1=Info, 2=Warning, 3=Error, 4=Fatal
+    bool     wifiOk = false;
+    uint8_t  printProgress = 255;    // 0-100, 255 = unknown/off
+    uint8_t  downloadProgress = 255; // 0-100, 255 = unknown/off
+    bool     heating = false;
+    bool     cooling = false;
   };
 
   // --- Boot selftest (ampel, segmentweise fill-up) ---

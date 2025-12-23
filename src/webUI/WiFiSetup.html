@@ -208,6 +208,33 @@
 
         if (res.ok) alertToast("success", "Settings saved. Restarting…");
         else alertToast("error", "Save failed: " + res.status);
+
+
+        if (res.ok) {
+          const devName = (document.getElementById("devicename").value || "BambuBeacon").trim();
+          const staticIp = document.getElementById("ip").value.trim();
+          const host = staticIp || (devName.toLowerCase() + ".local");
+          const target = "http://" + host + "/printersetup";
+          const checkUrl = "http://" + host + "/info.json";
+
+          const form = document.getElementById("wifiForm");
+          Array.from(form.elements).forEach(el => el.disabled = true);
+
+          let tries = 0;
+          const maxTries = 60;
+          const tick = async () => {
+            tries++;
+            try {
+              const r = await fetch(checkUrl, { cache: "no-store" });
+              if (r.ok) {
+                location.href = target;
+                return;
+              }
+            } catch {}
+            if (tries < maxTries) setTimeout(tick, 1000);
+          };
+          setTimeout(tick, 1000);
+        }
       } catch {
         alertToast("info", "Device is likely restarting.");
       }

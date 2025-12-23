@@ -53,6 +53,7 @@ public:
   // Access last known printers
   int knownCount() const;
   const BBLPrinter* knownPrinters() const;
+  bool isBusy() const;
 
 private:
   enum class State : uint8_t

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>BambuBeacon Printer Setup</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <canvas id="particleCanvas"></canvas>
+
+  <div id="container">
+    <div id="header">
+      <a href="/"><img id="logo" src="/bmsc.svg" alt="Logo" /></a>
+      <h1>BambuBeacon Printer Setup</h1>
+    </div>
+
+    <form id="printerForm" class="panel">
+      <div class="panel-title">Printer Configuration</div>
+
+      <button type="button" class="btn btn-outline" id="searchPrintersBtn">Search Printer</button>
+
+      <label for="printerip">Printer IP</label>
+      <input type="text" id="printerip" autocomplete="off" placeholder="192.168.1.50" required />
+
+      <label for="printerusn">USN</label>
+      <input type="text" id="printerusn" autocomplete="off" required />
+
+      <label for="printerac">Access Key</label>
+      <input type="password" id="printerac" autocomplete="new-password" required />
+
+      <div class="button-stack actions">
+        <button type="submit" class="btn" id="savePrinterBtn" disabled>Save</button>
+        <button type="button" class="btn btn-outline" onclick="location.href='/'">Back</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="toast"><span id="toast-icon">i</span><span id="toast-msg">Placeholder</span></div>
+
+  <div id="modal-backdrop" class="modal-backdrop">
+    <div id="printer-modal" class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Printers Found</div>
+        <button type="button" class="modal-close" id="modalCloseBtn">Close</button>
+      </div>
+      <div class="modal-body">
+        <div id="printer-list" class="modal-list">Searching...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/backgroundCanvas.js"></script>
+  <script>
+    function alertToast(type, message) {
+      const toast = document.getElementById("toast");
+      const icon = document.getElementById("toast-icon");
+      const msg  = document.getElementById("toast-msg");
+
+      let iconChar = "i";
+      let borderColor = "rgba(255,255,255,0.18)";
+      const css = getComputedStyle(document.documentElement);
+
+      switch (String(type).toLowerCase()) {
+        case "success": iconChar = "ok"; borderColor = css.getPropertyValue("--bb-primary"); break;
+        case "error":   iconChar = "!";  borderColor = css.getPropertyValue("--bb-warning"); break;
+        case "warning": iconChar = "!";  borderColor = css.getPropertyValue("--bb-highlight"); break;
+        default:        iconChar = "i";
+      }
+
+      toast.style.borderLeftColor = (borderColor || "").trim() || "#00E5FF";
+      icon.textContent = iconChar;
+      msg.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3000);
+    }
+
+    function openModal() {
+      document.getElementById("modal-backdrop").classList.add("show");
+    }
+
+    function closeModal() {
+      document.getElementById("modal-backdrop").classList.remove("show");
+    }
+
+    function updateSaveState() {
+      const ipEl = document.getElementById("printerip");
+      const usnEl = document.getElementById("printerusn");
+      const acEl = document.getElementById("printerac");
+
+      const ip = ipEl.value.trim();
+      const usn = usnEl.value.trim();
+      const ac = acEl.value.trim();
+
+      ipEl.classList.toggle("invalid", !ip);
+      usnEl.classList.toggle("invalid", !usn);
+      acEl.classList.toggle("invalid", !ac);
+
+      document.getElementById("savePrinterBtn").disabled = !(ip && usn && ac);
+    }
+
+    function renderPrinters(printers) {
+      const list = document.getElementById("printer-list");
+      list.innerHTML = "";
+
+      if (!printers || !printers.length) {
+        list.innerHTML = '<div class="modal-empty">No printers found.</div>';
+        return;
+      }
+
+      printers.forEach(p => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "modal-item";
+        btn.innerHTML = `<div class="modal-item-title">${p.usn || "Unknown USN"}</div>
+                         <div class="modal-item-meta">${p.ip || ""}</div>`;
+        btn.addEventListener("click", () => {
+          if (p.ip)  document.getElementById("printerip").value = p.ip;
+          if (p.usn) document.getElementById("printerusn").value = p.usn;
+          updateSaveState();
+          closeModal();
+        });
+        list.appendChild(btn);
+      });
+    }
+
+    async function fetchPrinters(rescan) {
+      const url = rescan ? "/bblprinterdiscovery?rescan=1" : "/bblprinterdiscovery";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Discovery failed");
+      const data = await res.json();
+      return data.printers || [];
+    }
+
+    function sleep(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
+
+    async function runDiscovery() {
+      openModal();
+      const list = document.getElementById("printer-list");
+      list.textContent = "Searching...";
+
+      try {
+        await fetchPrinters(true);
+        for (let i = 0; i < 4; i++) {
+          await sleep(900);
+          const printers = await fetchPrinters(false);
+          renderPrinters(printers);
+        }
+      } catch (err) {
+        list.innerHTML = '<div class="modal-empty">Discovery failed.</div>';
+        alertToast("error", "Printer discovery failed.");
+        console.error(err);
+      }
+    }
+
+    async function loadConfig() {
+      try {
+        const res = await fetch("/printerconf.json");
+        const c = await res.json();
+        document.getElementById("printerip").value = c.printerIP || "";
+        document.getElementById("printerusn").value = c.printerUSN || "";
+        document.getElementById("printerac").value = c.printerAC || "";
+      } catch {}
+      updateSaveState();
+    }
+
+    document.getElementById("printerForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const body =
+          `printerip=${encodeURIComponent(document.getElementById("printerip").value)}` +
+          `&printerusn=${encodeURIComponent(document.getElementById("printerusn").value)}` +
+          `&printerac=${encodeURIComponent(document.getElementById("printerac").value)}`;
+
+        const res = await fetch("/submitPrinterConfig", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body
+        });
+
+        if (res.ok) alertToast("success", "Printer settings saved.");
+        else alertToast("error", "Save failed: " + res.status);
+      } catch {
+        alertToast("error", "Save failed.");
+      }
+    });
+
+    document.getElementById("searchPrintersBtn").addEventListener("click", runDiscovery);
+    document.getElementById("modalCloseBtn").addEventListener("click", closeModal);
+    document.getElementById("modal-backdrop").addEventListener("click", (e) => {
+      if (e.target.id === "modal-backdrop") closeModal();
+    });
+    ["printerip", "printerusn", "printerac"].forEach(id => {
+      document.getElementById(id).addEventListener("input", updateSaveState);
+    });
+
+    loadConfig();
+  </script>
+</body>
+</html>
