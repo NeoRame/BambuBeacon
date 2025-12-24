@@ -24,8 +24,24 @@ public:
     });
   }
 
+#ifdef WSL_CUSTOM_PAGE
+  bool setCustomHtmlPage(const uint8_t* ptr, size_t size, const char* encoding = nullptr) {
+    return _ws.setCustomHtmlPage(ptr, size, encoding);
+  }
+
+  bool setCustomHtmlPage(const char* ptr, const char* encoding = nullptr) {
+    return _ws.setCustomHtmlPage(ptr, encoding);
+  }
+#endif
+
   void onMessage(std::function<void(const std::string&)> cb) {
     _ws.onMessage(cb);
+  }
+
+  void setAuthentication(const char* user, const char* pass) {
+    if (user && *user) {
+      _ws.setAuthentication(user, pass ? pass : "");
+    }
   }
 
   void setBuffer(size_t size) {

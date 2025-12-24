@@ -280,7 +280,7 @@ void LedController::render(uint32_t nowMs) {
       uint8_t saw = (nowMs / 8) & 0xFF;
       uint8_t level = saw;
       CRGB c = CRGB(255, 80, 0);
-      c.nscale8_video(scale8(level, 200) + 30);
+      c.nscale8_video(scale8(level, 200));
       setSegmentColor(1, c, false);
     } else if (_st.hmsSev == 2) {
       uint8_t pulse = sin8((nowMs / 10) & 0xFF);

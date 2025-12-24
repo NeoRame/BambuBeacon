@@ -6,195 +6,15 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <title>Web Console</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style type="text/css">
-        div {
-            display: block;
-        }
-
-        a {
-            margin: 0.4rem;
-            text-decoration: none;
-        }
-
-        *,
-        ::after,
-        ::before {
-            -webkit-box-sizing: inherit;
-            box-sizing: inherit;
-        }
-
-        p {
-            margin: 0 0 1rem;
-        }
-
-        body {
-            overscroll-behavior: none;
-            height: 100%;
-            width: 100%;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI",
-                Roboto, "Helvetica Neue", sans-serif;
-        }
-
-        .text-center {
-            text-align: center;
-        }
-
-        .gray {
-            color: #667189;
-        }
-
-        .shadow {
-            filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06));
-        }
-
-        .w-full {
-            width: 100%;
-        }
-
-        .grid {
-            display: grid;
-        }
-
-        .gap-2 {
-            gap: 0.5rem;
-        }
-
-        .flex {
-            display: flex;
-        }
-
-        .grow {
-            flex-grow: 1;
-        }
-
-        .justify-items-end {
-            justify-items: end;
-        }
-
-        .rounded {
-            border-radius: 0.5rem;
-        }
-
-        .section {
-            box-sizing: border-box;
-            background-color: #f8f9fa;
-        }
-
-        .main {
-            /* padding-top: 3rem; */
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-start;
-            align-items: center;
-            height: 100dvh;
-        }
-
-        .main .pannel {
-            position: relative;
-            border: #fff;
-            border-style: solid;
-            border-width: 0.5rem;
-            border-radius: 1rem;
-            background-color: #fff;
-            width: calc(100% - 1rem);
-            font-size: medium;
-            margin-top: 2.5rem;
-        }
-
-        .pannel button {
-            cursor: pointer;
-            padding: 8px 10px 8px;
-            font-size: medium;
-            outline-style: none;
-            border: 0px;
-            color: #fff;
-            background-color: #0067f4;
-        }
-
-        .pannel button:disabled {
-            background-color: #5a6169;
-        }
-
-        .pannel #record {
-            min-height: 3.25rem;
-            padding: 0.5rem;
-            resize: vertical;
-            overscroll-behavior: none;
-        }
-
-        #control-button {
-            position: absolute;
-            top: 0.5rem;
-            right: 0.5rem;
-        }
-
-        #control-button button {
-            background-color: #5a6169;
-        }
-
-        .alert span {
-            user-select: none;
-            background: #ffe14d;
-            padding: 2px 10px;
-            display: block;
-            color: black;
-        }
-
-        .footer {
-            padding: 1rem 0.5rem;
-            background-color: white;
-        }
-
-        .copyright {
-            padding-bottom: 1rem;
-        }
-
-        .float-left {
-            float: left;
-        }
-
-        .float-right {
-            float: right;
-        }
-
-        #logo {
-            height: 5em;
-            width: auto;
-            display: inline-block;
-            z-index: 1;
-        }
-        #header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 20px;
-  z-index: 1;
-}
-canvas {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgb(20, 80, 49);
-}
-h1,
-h2 {
-  color: white;
-  text-align: center;
-}
-    </style>
+    <link rel="stylesheet" href="/style.css" />
 </head>
 
-<body>
+<body class="webserial">
         <canvas id="particleCanvas"></canvas>
     <div class="section main text-center">
         <div id="header">
-            <img id="logo" src="/blled.svg">
-            <h1>BLLED Web Serial</h1>
+            <img id="logo" src="/logo.svg">
+            <h1>Web Serial</h1>
         </div>
 
         <div class="pannel shadow grid gap-2">
@@ -228,17 +48,11 @@ h2 {
                 </button>
             </div>
             <textarea class="w-full rounded" title="record" id="record" cols="30" rows="40" disabled></textarea>
-            <div class="flex w-full grid gap-2" id="terminal" style="display:none;">
-                <input stye="" type="text" name="cmd" id="command-text" class="grow rounded" /><button
-                    class="grid justify-items-end rounded shadow" id="command-button" hidden>
-                    SEND
-                </button>
-            </div>
         </div>
         <h1 />
     </div>
 </body>
-<script src="particleCanvas.js"></script>
+<script src="backgroundCanvas.js"></script>
 <script>
     let gateway = `ws://${window.location.host + window.location.pathname}ws`;
     let websocket;
@@ -247,8 +61,6 @@ h2 {
     let enableTimestamp = true;
     let pingTimeout;
     let connectTimeout;
-    let commandHistory = [];
-    let commandHistoryIdx = 0;
 
     function removeLogo() {
         document.getElementById("logo").remove();
@@ -256,18 +68,7 @@ h2 {
     }
 
     function initWebPage() {
-        document.getElementById("command-button").disabled = true;
-        document.getElementById("command-text").disabled = true;
-        initCommandHistory();
         initWebSocket();
-        initButton();
-        trapKeyPress();
-    }
-
-    function initCommandHistory() {
-        const json = localStorage.history;
-        commandHistory = json ? JSON.parse(json) : [];
-        commandHistoryIdx = commandHistory.length;
     }
 
     function initWebSocket() {
@@ -287,42 +88,9 @@ h2 {
         websocket.onerror = onError;
     }
 
-    function initButton() {
-        document.getElementById("command-button").addEventListener("click", sendCommand);
-    }
-
-    function trapKeyPress() {
-        document.getElementById("command-text").addEventListener("keypress", (event) => {
-            if (event.code === "Enter") {
-                event.preventDefault();
-                document.getElementById("command-button").click();
-            }
-        });
-        document.addEventListener("keydown", (event) => {
-            if (document.activeElement && document.activeElement.id === 'command-text') {
-                if (event.code === "ArrowUp") {
-                    commandHistoryIdx--;
-                    if (commandHistoryIdx < 0)
-                        commandHistoryIdx = commandHistory.length > 0 ? commandHistory.length - 1 : 0;
-                    if (commandHistoryIdx >= 0 && commandHistoryIdx < commandHistory.length)
-                        document.getElementById("command-text").value = commandHistory[commandHistoryIdx];
-
-                } else if (event.code === "ArrowDown") {
-                    commandHistoryIdx++;
-                    if (commandHistoryIdx >= commandHistory.length)
-                        commandHistoryIdx = 0;
-                    if (commandHistoryIdx >= 0 && commandHistoryIdx < commandHistory.length)
-                        document.getElementById("command-text").value = commandHistory[commandHistoryIdx];
-                }
-            }
-        });
-    }
-
     function onOpen(event) {
         clearTimeout(connectTimeout);
         terminalWrite("[WebSerial] Connected...");
-        document.getElementById("command-button").disabled = false;
-        document.getElementById("command-text").disabled = false;
     }
 
     function onError(e) {
@@ -357,22 +125,6 @@ h2 {
     function terminalClean() {
         textArea.value = "";
         textArea.scrollTop = textArea.scrollHeight;
-    }
-
-    function sendCommand() {
-        let cmd = document.getElementById("command-text").value;
-        console.log('send command: ', cmd);
-        websocket.send(cmd);
-        commandHistory.push(cmd);
-        console.log('history size: ', commandHistory.length);
-        if (commandHistory.length > 20) {
-            console.log('history cleanup');
-            commandHistory.splice(0, commandHistory.length - 20);
-            console.log('history size: ', commandHistory.length);
-        }
-        commandHistoryIdx = commandHistory.length;
-        document.getElementById("command-text").value = "";
-        localStorage.history = JSON.stringify(commandHistory);
     }
 
     setInterval(() => {

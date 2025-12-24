@@ -18,3 +18,6 @@ private:
   void handlePrinterDiscovery(AsyncWebServerRequest* req);
   void handleSubmitPrinterConfig(AsyncWebServerRequest* req);
 };
+
+const uint8_t* webserialHtml();
+size_t webserialHtmlLen();

@@ -10,15 +10,16 @@ extern Settings settings;
 static DNSServer dns;
 static const IPAddress apIP(192,168,4,1);
 
-bool WiFiManager::connectSTA() {
+void WiFiManager::startConnectAttempt() {
   const char* ssid0 = settings.get.wifiSsid0();
   const char* pass0 = settings.get.wifiPass0();
-  const char* ssid1 = settings.get.wifiSsid1();
-  const char* pass1 = settings.get.wifiPass1();
 
-  if (!ssid0 || !*ssid0) return false;
+  if (!ssid0 || !*ssid0) {
+    _connectPhase = ConnectPhase::IDLE;
+    return;
+  }
 
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(_apMode ? WIFI_AP_STA : WIFI_STA);
   WiFi.setHostname(settings.get.deviceName());
 
   // Optional static IP
@@ -33,30 +34,39 @@ bool WiFiManager::connectSTA() {
   }
 
   WiFi.begin(ssid0, pass0);
+  _connectPhase = ConnectPhase::SSID0;
+  _connectStart = millis();
+}
 
-  unsigned long start = millis();
-  while (millis() - start < 8000UL) {
-    if (WiFi.status() == WL_CONNECTED) return true;
-    delay(50);
+WiFiManager::AttemptResult WiFiManager::processConnectAttempt() {
+  if (_connectPhase == ConnectPhase::IDLE) return AttemptResult::InProgress;
+  if (WiFi.status() == WL_CONNECTED) {
+    _connectPhase = ConnectPhase::IDLE;
+    return AttemptResult::Connected;
   }
 
-  if (ssid1 && *ssid1) {
-    WiFi.disconnect(true, true);
-    delay(150);
-    WiFi.begin(ssid1, pass1);
+  const unsigned long now = millis();
+  if (now - _connectStart < kConnectTimeoutMs) return AttemptResult::InProgress;
 
-    start = millis();
-    while (millis() - start < 8000UL) {
-      if (WiFi.status() == WL_CONNECTED) return true;
-      delay(50);
+  if (_connectPhase == ConnectPhase::SSID0) {
+    const char* ssid1 = settings.get.wifiSsid1();
+    const char* pass1 = settings.get.wifiPass1();
+    if (ssid1 && *ssid1) {
+      WiFi.begin(ssid1, pass1);
+      _connectPhase = ConnectPhase::SSID1;
+      _connectStart = now;
+      return AttemptResult::InProgress;
     }
   }
 
-  return false;
+  _connectPhase = ConnectPhase::IDLE;
+  return AttemptResult::Failed;
 }
 
 void WiFiManager::startAP() {
   _apMode = true;
+  _connectPhase = ConnectPhase::IDLE;
+  _connectStart = 0;
 
   WiFi.disconnect(true, true);
   delay(150);
@@ -82,8 +92,14 @@ void WiFiManager::startAP() {
 }
 
 void WiFiManager::begin() {
-  if (!connectSTA()) startAP();
-  else _apMode = false;
+  _apMode = false;
+  _tries = 0;
+  _lastTry = 0;
+  _connectPhase = ConnectPhase::IDLE;
+
+  const char* ssid0 = settings.get.wifiSsid0();
+  if (ssid0 && *ssid0) startConnectAttempt();
+  else startAP();
 
   if (MDNS.begin(settings.get.deviceName())) {
     MDNS.addService("http", "tcp", 80);
@@ -95,26 +111,60 @@ void WiFiManager::begin() {
 void WiFiManager::loop() {
   if (_apMode) {
     dns.processNextRequest();
-    return;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    if (_apMode) {
+      webSerial.println("[WiFi] Connected in AP mode, stopping AP");
+      stopAP();
+    }
+    _connectPhase = ConnectPhase::IDLE;
     _tries = 0;
     return;
   }
 
+  const char* ssid0 = settings.get.wifiSsid0();
+  const bool hasSsid0 = (ssid0 && *ssid0);
+  if (!hasSsid0) {
+    if (!_apMode) startAP();
+    return;
+  }
+
   const unsigned long now = millis();
-  if (now - _lastTry < 15000UL) return;
+  if (_connectPhase != ConnectPhase::IDLE) {
+    AttemptResult res = processConnectAttempt();
+    if (res == AttemptResult::Connected) {
+      _tries = 0;
+      return;
+    }
+    if (res == AttemptResult::Failed) {
+      _tries++;
+      _lastTry = now;
+      webSerial.printf("[WiFi] Reconnect attempt %u failed\n", _tries);
+      if (!_apMode && _tries >= kMaxTriesBeforeAp) {
+        webSerial.println("[WiFi] Switching to AP mode");
+        startAP();
+      }
+    }
+    return;
+  }
+
+  if (now - _lastTry < kRetryIntervalMs) return;
   _lastTry = now;
 
-  _tries++;
-  webSerial.printf("[WiFi] Reconnect attempt %u\n", _tries);
-
-  if (_tries >= 4) {
+  if (!_apMode && _tries >= kMaxTriesBeforeAp) {
     webSerial.println("[WiFi] Switching to AP mode");
     startAP();
     return;
   }
 
-  connectSTA();
+  webSerial.printf("[WiFi] Reconnect attempt %u\n", _tries + 1);
+  startConnectAttempt();
+}
+
+void WiFiManager::stopAP() {
+  dns.stop();
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  _apMode = false;
 }

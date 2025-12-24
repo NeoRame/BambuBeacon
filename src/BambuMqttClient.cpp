@@ -4,6 +4,15 @@ namespace {
 BambuMqttClient* s_instance = nullptr;
 constexpr uint32_t kTlsHandshakeTimeoutMs = 5000;
 constexpr uint32_t kSocketTimeoutMs = 5000;
+const char* severityToStr(BambuMqttClient::Severity s) {
+  switch (s) {
+    case BambuMqttClient::Severity::Fatal: return "Fatal";
+    case BambuMqttClient::Severity::Error: return "Error";
+    case BambuMqttClient::Severity::Warning: return "Warning";
+    case BambuMqttClient::Severity::Info: return "Info";
+    default: return "None";
+  }
+}
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
   if (s_instance) s_instance->handleMqttMessage(topic, payload, length);
 }
@@ -46,7 +55,7 @@ bool BambuMqttClient::begin(Settings &settings) {
 #endif
   _net.setTimeout(kSocketTimeoutMs);
   _mqtt.setServer(_printerIP.c_str(), kPort);
-  _mqtt.setBufferSize(4096);
+  _mqtt.setBufferSize(kMqttBufferSize);
 
   s_instance = this;
   _mqtt.setCallback(mqttCallback);
@@ -93,7 +102,7 @@ void BambuMqttClient::reloadFromSettings() {
 #endif
   _net.setTimeout(kSocketTimeoutMs);
   _mqtt.setServer(_printerIP.c_str(), kPort);
-  _mqtt.setBufferSize(4096);
+  _mqtt.setBufferSize(kMqttBufferSize);
 
   _subscribed = false;
   _ready = true;
@@ -180,6 +189,14 @@ void BambuMqttClient::loopTick() {
     _mqtt.loop();
   }
 
+  const uint32_t now = millis();
+  if (_mqtt.connected() && now - _lastMqttDebugMs >= 10000UL) {
+    const uint32_t age = _lastMsgMs ? (now - _lastMsgMs) : 0;
+    webSerial.printf("[MQTT] Loop ok sub=%d lastMsgAge=%u ms lastLen=%u\n",
+                     _subscribed ? 1 : 0, (unsigned)age, (unsigned)_lastMsgLen);
+    _lastMqttDebugMs = now;
+  }
+
   expireEvents(millis());
 }
 
@@ -206,6 +223,10 @@ uint8_t BambuMqttClient::downloadProgress() const { return _downloadProgress; }
 float BambuMqttClient::bedTemp() const { return _bedTemp; }
 float BambuMqttClient::bedTarget() const { return _bedTarget; }
 bool BambuMqttClient::bedValid() const { return _bedValid; }
+float BambuMqttClient::nozzleTemp() const { return _nozzleTemp; }
+float BambuMqttClient::nozzleTarget() const { return _nozzleTarget; }
+bool BambuMqttClient::nozzleValid() const { return _nozzleValid; }
+bool BambuMqttClient::nozzleHeating() const { return _nozzleHeating; }
 
 void BambuMqttClient::subscribeReportOnce() {
   if (_subscribed) return;
@@ -219,6 +240,9 @@ void BambuMqttClient::handleMqttMessage(char* topic, uint8_t* payload, unsigned 
   if (!topic || !payload || length == 0) return;
   if (_topicReport.isEmpty()) return;
   if (strcmp(topic, _topicReport.c_str()) != 0) return;
+
+  _lastMsgLen = length;
+  _lastMsgMs = millis();
 
   String msg;
   msg.reserve(length + 1);
@@ -291,7 +315,50 @@ void BambuMqttClient::handleReportJson(const char* payload) {
     _bedValid = true;
   }
 
+  float noz = 0.0f;
+  float nozTarget = 0.0f;
+  bool nozOk = readFloat(doc["print"]["nozzle_temper"], noz) ||
+               readFloat(doc["nozzle_temper"], noz);
+  bool nozTargetOk = readFloat(doc["print"]["nozzle_target_temper"], nozTarget) ||
+                     readFloat(doc["nozzle_target_temper"], nozTarget);
+
+  _nozzleHeating = false;
+  JsonVariant extr = doc["device"]["extruder"]["info"];
+  if (extr.is<JsonArray>()) {
+    for (JsonVariant v : extr.as<JsonArray>()) {
+      if (!v.is<JsonObject>()) continue;
+      JsonObject e = v.as<JsonObject>();
+
+      int hnow = 0;
+      if (readInt(e["hnow"], hnow) && hnow > 0) _nozzleHeating = true;
+      int htar = 0;
+      if (readInt(e["htar"], htar) && htar > 0) _nozzleHeating = true;
+
+      float t = 0.0f;
+      if (readFloat(e["temp"], t)) {
+        if (t > 500.0f) {
+          float fx = t / 65536.0f;
+          if (fx >= 0.0f && fx <= 500.0f) t = fx;
+        }
+        if (!nozOk || t > noz) {
+          noz = t;
+          nozOk = true;
+        }
+      }
+    }
+  }
+
+  if (nozOk) {
+    _nozzleTemp = noz;
+    _nozzleValid = true;
+  }
+  if (nozTargetOk) {
+    _nozzleTarget = nozTarget;
+  }
+
   parseHmsFromDoc(doc);
+
+  logStatusIfNeeded(millis());
 
   if (_reportCb) _reportCb(doc);
 }
@@ -363,9 +430,15 @@ void BambuMqttClient::upsertEvent(uint32_t attr, uint32_t code, uint32_t nowMs) 
 
   for (uint8_t i = 0; i < _eventsCap; i++) {
     if (_events[i].full == full) {
+      const bool wasActive = _events[i].active;
       _events[i].lastSeenMs = nowMs;
       _events[i].count++;
       _events[i].active = true;
+      if (!wasActive) {
+        char codeStr[24];
+        formatHmsCodeStr(full, codeStr);
+        webSerial.printf("[HMS] %s sev=%s\n", codeStr, severityToStr(severityFromCode(code)));
+      }
       return;
     }
   }
@@ -401,6 +474,7 @@ void BambuMqttClient::upsertEvent(uint32_t attr, uint32_t code, uint32_t nowMs) 
   e.lastSeenMs = nowMs;
   e.count = 1;
   e.active = true;
+  webSerial.printf("[HMS] %s sev=%s\n", e.codeStr, severityToStr(e.severity));
 }
 
 void BambuMqttClient::expireEvents(uint32_t nowMs) {
@@ -465,4 +539,35 @@ size_t BambuMqttClient::getActiveEvents(HmsEvent* out, size_t maxOut) const {
     if (n >= maxOut) break;
   }
   return n;
+}
+
+void BambuMqttClient::logStatusIfNeeded(uint32_t nowMs) {
+  const Severity top = topSeverity();
+  const uint16_t hmsCount = countActiveTotal();
+  const bool stateChanged =
+    (_gcodeState != _lastStatusState) ||
+    (_printProgress != _lastStatusPrint) ||
+    (_downloadProgress != _lastStatusDownload) ||
+    (top != _lastStatusSeverity) ||
+    (hmsCount != _lastStatusHmsCount);
+
+  if (!stateChanged && (nowMs - _lastStatusLogMs < 5000UL)) return;
+
+  const char* state = _gcodeState.length() ? _gcodeState.c_str() : "?";
+  if (_bedValid) {
+    webSerial.printf("[MQTT] State=%s Print=%u%% DL=%u%% Bed=%.1f/%.1f HMS=%u Top=%s\n",
+                     state, _printProgress, _downloadProgress,
+                     _bedTemp, _bedTarget, (unsigned)hmsCount, severityToStr(top));
+  } else {
+    webSerial.printf("[MQTT] State=%s Print=%u%% DL=%u%% Bed=n/a HMS=%u Top=%s\n",
+                     state, _printProgress, _downloadProgress,
+                     (unsigned)hmsCount, severityToStr(top));
+  }
+
+  _lastStatusLogMs = nowMs;
+  _lastStatusState = _gcodeState;
+  _lastStatusPrint = _printProgress;
+  _lastStatusDownload = _downloadProgress;
+  _lastStatusSeverity = top;
+  _lastStatusHmsCount = hmsCount;
 }

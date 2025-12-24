@@ -19,12 +19,13 @@ BBLPrinterDiscovery printerDiscovery;
 BambuMqttClient bambu;
 
 void setup() {
-  Serial.begin(115200);
-  delay(50);
-
+#ifdef WSL_CUSTOM_PAGE
+  webSerial.setCustomHtmlPage(webserialHtml(), webserialHtmlLen(), "gzip");
+#endif
   webSerial.begin(&server, 115200, 200);
 
   settings.begin();
+  webSerial.setAuthentication(settings.get.webUIuser(), settings.get.webUIPass());
   ledsCtrl.begin(settings);
   wifiManager.begin();
   web.begin();
@@ -70,6 +71,11 @@ void loop() {
   if (bambu.bedValid()) {
     heating = !finished && (bambu.bedTarget() > (bambu.bedTemp() + 2.0f));
     cooling = finished && (bambu.bedTemp() > 45.0f);
+  }
+  if (bambu.nozzleHeating()) {
+    heating = true;
+  } else if (bambu.nozzleValid()) {
+    heating = heating || (!finished && (bambu.nozzleTarget() > (bambu.nozzleTemp() + 2.0f)));
   }
   ledsCtrl.setThermalState(heating, cooling);
   ledsCtrl.loop();

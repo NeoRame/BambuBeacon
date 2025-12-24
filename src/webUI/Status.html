@@ -11,7 +11,7 @@
 
   <div id="container">
     <div id="header">
-      <a href="/"><img id="logo" src="/bmsc.svg" alt="Logo" /></a>
+      <a href="/"><img id="logo" src="/logo.svg" alt="Logo" /></a>
       <h1>BambuBeacon</h1>
     </div>
 
@@ -31,9 +31,10 @@
     <div class="panel">
       <div class="panel-title">Setup</div>
       <div class="button-stack">
-        <button class="btn" onclick="location.href='/wifisetup'">Wi-Fi / Network</button>
+        <button class="btn btn-outline" onclick="location.href='/wifisetup'">Wi-Fi / Network</button>
         <button class="btn btn-outline" onclick="location.href='/printersetup'">Printer Setup</button>
         <button class="btn btn-outline" onclick="location.href='/maintenance'">Maintenance</button>
+        <button class="btn btn-outline" onclick="window.open('/webserial','_blank','noopener')">Debug Log</button>
       </div>
     </div>
   </div>

@@ -18,6 +18,14 @@ extern BambuMqttClient bambu;
 extern LedController ledsCtrl;
 static void scheduleRestart(uint32_t delayMs);
 
+const uint8_t* webserialHtml() {
+  return WebSerial_html_gz;
+}
+
+size_t webserialHtmlLen() {
+  return WebSerial_html_gz_len;
+}
+
 // -------------------- Non-blocking WiFi scan cache --------------------
 namespace NetScanCache
 {
@@ -265,14 +273,16 @@ void WebServerHandler::begin() {
     sendGz(req, Maintenance_html_gz, Maintenance_html_gz_len, Maintenance_html_gz_mime);
   });
 
-  // webserial
-  server.on("/webserial", HTTP_GET, [&](AsyncWebServerRequest* req) {
-    if (!isAuthorized(req)) return req->requestAuthentication();
-    sendGz(req, WebSerial_html_gz, WebSerial_html_gz_len, WebSerial_html_gz_mime);
-  });
-
   server.on("/style.css", HTTP_GET, [&](AsyncWebServerRequest* req) {
     sendGz(req, Style_css_gz, Style_css_gz_len, Style_css_gz_mime);
+  });
+
+  server.on("/logo.svg", HTTP_GET, [&](AsyncWebServerRequest* req) {
+    sendGz(req, logo_svg_gz, logo_svg_gz_len, logo_svg_gz_mime);
+  });
+
+  server.on("/favicon.ico", HTTP_GET, [&](AsyncWebServerRequest* req) {
+    sendGz(req, logo_ico_gz, logo_ico_gz_len, logo_ico_gz_mime);
   });
 
   server.on("/backgroundCanvas.js", HTTP_GET, [&](AsyncWebServerRequest* req) {
@@ -373,15 +383,15 @@ void WebServerHandler::begin() {
       if (!wifiManager.isApMode() && !isAuthorized(req)) return;
       if (index == 0) {
         if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-          Update.printError(Serial);
+          Update.printError(webSerial);
         }
       }
       if (Update.write(data, len) != len) {
-        Update.printError(Serial);
+        Update.printError(webSerial);
       }
       if (final) {
         if (!Update.end(true)) {
-          Update.printError(Serial);
+          Update.printError(webSerial);
         }
       }
     }

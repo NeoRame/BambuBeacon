@@ -66,6 +66,10 @@ public:
   float bedTemp() const;
   float bedTarget() const;
   bool bedValid() const;
+  float nozzleTemp() const;
+  float nozzleTarget() const;
+  bool nozzleValid() const;
+  bool nozzleHeating() const;
 
   const String& topicReport() const;
   const String& topicRequest() const;
@@ -79,6 +83,7 @@ private:
 
   void subscribeReportOnce();
   void handleReportJson(const char* payload);
+  void logStatusIfNeeded(uint32_t nowMs);
 
   void parseHmsFromDoc(JsonDocument& doc);
   JsonArray findHmsArray(JsonDocument& doc);
@@ -108,6 +113,7 @@ private:
   // Fixed
   static const uint16_t kPort = 8883;
   static const char*    kUser;
+  static const size_t   kMqttBufferSize = 32768;
 
   String _serverUri;
   String _topicReport;
@@ -124,11 +130,26 @@ private:
   float _bedTemp = 0.0f;
   float _bedTarget = 0.0f;
   bool _bedValid = false;
+  float _nozzleTemp = 0.0f;
+  float _nozzleTarget = 0.0f;
+  bool _nozzleValid = false;
+  bool _nozzleHeating = false;
 
   HmsEvent* _events = nullptr;
 
   // NEW: safe guard when settings are incomplete or begin() not successful
   bool _ready = false;
+
+  uint32_t _lastStatusLogMs = 0;
+  String _lastStatusState;
+  uint8_t _lastStatusPrint = 255;
+  uint8_t _lastStatusDownload = 255;
+  Severity _lastStatusSeverity = Severity::None;
+  uint16_t _lastStatusHmsCount = 0;
+  uint32_t _lastMsgMs = 0;
+  uint32_t _lastMsgLen = 0;
+  uint32_t _lastMqttDebugMs = 0;
+  uint32_t _lastReportLogMs = 0;
 
   ReportCallback _reportCb;
 };
