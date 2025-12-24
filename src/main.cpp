@@ -80,7 +80,16 @@ void loop() {
   }
   ledsCtrl.setThermalState(heating, cooling);
   ledsCtrl.setPaused(paused);
-  const bool showFinish = finished && (!bambu.bedValid() || bambu.bedTemp() > 45.0f);
+  static uint32_t finishSinceMs = 0;
+  if (finished && finishSinceMs == 0) {
+    finishSinceMs = nowMs;
+  } else if (!finished) {
+    finishSinceMs = 0;
+  }
+  const uint32_t FINISH_MIN_MS = 5UL * 60UL * 1000UL;
+  const bool finishMinActive = (finishSinceMs != 0) && (uint32_t)(nowMs - finishSinceMs) < FINISH_MIN_MS;
+  const bool bedHot = bambu.bedValid() && (bambu.bedTemp() > 45.0f);
+  const bool showFinish = finished && (finishMinActive || bedHot);
   ledsCtrl.setFinished(showFinish);
   ledsCtrl.loop();
 }
