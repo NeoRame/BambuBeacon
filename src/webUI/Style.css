@@ -337,13 +337,14 @@ body.webserial .grid{display:grid}
 body.webserial .gap-2{gap:.5rem}
 body.webserial .justify-items-end{justify-items:end}
 body.webserial .rounded{border-radius:.5rem}
-body.webserial .section{box-sizing:border-box;background-color:var(--surface-2)}
+body.webserial .section{box-sizing:border-box}
 body.webserial .main{
   display:flex;
   flex-direction:column;
   justify-content:flex-start;
   align-items:center;
   height:100dvh;
+  background:transparent;
 }
 body.webserial .main .pannel{
   position:relative;
@@ -356,6 +357,11 @@ body.webserial .main .pannel{
 }
 body.webserial .pannel button{
   cursor:pointer;
+  width:auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:36px;
   padding:8px 10px 8px;
   font-size:medium;
   outline-style:none;
@@ -418,19 +424,7 @@ body.webserial #particleCanvas{
   background:#0B1210;
   z-index:0;
 }
-body.webserial .section{position:relative;z-index:1}
-body.webserial .section{background:transparent}
-body.webserial .main{background:transparent}
-body.webserial .pannel button{
-  width:auto;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-}
-body.webserial #control-button button{
-  width:auto;
-  min-width:36px;
-}
+body.webserial .section{position:relative;z-index:1;background:transparent}
 body.webserial h1,
 body.webserial h2{
   color:var(--bb-text);
