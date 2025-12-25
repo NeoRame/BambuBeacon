@@ -19,6 +19,7 @@ void WiFiManager::startConnectAttempt() {
     return;
   }
 
+  _lastFailNoAp = false;
   WiFi.mode(_apMode ? WIFI_AP_STA : WIFI_STA);
   WiFi.setHostname(settings.get.deviceName());
 
@@ -46,6 +47,29 @@ WiFiManager::AttemptResult WiFiManager::processConnectAttempt() {
   }
 
   const unsigned long now = millis();
+  const wl_status_t st = WiFi.status();
+  if ((st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED) &&
+      (now - _connectStart) >= kFastFailNoApMs) {
+    _lastFailNoAp = true;
+    _connectStart = 0;
+  }
+
+  if (_connectStart == 0) {
+    if (_connectPhase == ConnectPhase::SSID0) {
+      const char* ssid1 = settings.get.wifiSsid1();
+      const char* pass1 = settings.get.wifiPass1();
+      if (ssid1 && *ssid1) {
+        WiFi.begin(ssid1, pass1);
+        _connectPhase = ConnectPhase::SSID1;
+        _connectStart = now;
+        return AttemptResult::InProgress;
+      }
+    }
+
+    _connectPhase = ConnectPhase::IDLE;
+    return AttemptResult::Failed;
+  }
+
   if (now - _connectStart < kConnectTimeoutMs) return AttemptResult::InProgress;
 
   if (_connectPhase == ConnectPhase::SSID0) {
@@ -96,6 +120,7 @@ void WiFiManager::begin() {
   _tries = 0;
   _lastTry = 0;
   _connectPhase = ConnectPhase::IDLE;
+  _lastFailNoAp = false;
 
   const char* ssid0 = settings.get.wifiSsid0();
   if (ssid0 && *ssid0) startConnectAttempt();
@@ -114,12 +139,13 @@ void WiFiManager::loop() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    if (_apMode) {
+    if (_apMode && WiFi.localIP() != IPAddress(0,0,0,0)) {
       webSerial.println("[WiFi] Connected in AP mode, stopping AP");
       stopAP();
     }
     _connectPhase = ConnectPhase::IDLE;
     _tries = 0;
+    _lastFailNoAp = false;
     return;
   }
 
@@ -135,13 +161,14 @@ void WiFiManager::loop() {
     AttemptResult res = processConnectAttempt();
     if (res == AttemptResult::Connected) {
       _tries = 0;
+      _lastFailNoAp = false;
       return;
     }
     if (res == AttemptResult::Failed) {
       _tries++;
       _lastTry = now;
       webSerial.printf("[WiFi] Reconnect attempt %u failed\n", _tries);
-      if (!_apMode && _tries >= kMaxTriesBeforeAp) {
+      if (!_apMode && (_lastFailNoAp || _tries >= kMaxTriesBeforeAp)) {
         webSerial.println("[WiFi] Switching to AP mode");
         startAP();
       }
@@ -149,7 +176,9 @@ void WiFiManager::loop() {
     return;
   }
 
-  if (now - _lastTry < kRetryIntervalMs) return;
+  const unsigned long retryInterval = _apMode ? kApRetryIntervalMs : kRetryIntervalMs;
+  if (now - _lastTry < retryInterval) return;
+  if (_apMode && WiFi.softAPgetStationNum() > 0) return;
   _lastTry = now;
 
   if (!_apMode && _tries >= kMaxTriesBeforeAp) {

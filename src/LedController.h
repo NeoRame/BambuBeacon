@@ -30,6 +30,14 @@ public:
   void setBrightness(uint8_t b);
   void clear(bool showNow = true);
 
+  void setTestMode(bool enabled);
+  bool testMode() const { return _testMode; }
+  void testSetState(const String& state);
+  void testSetWifi(bool ok);
+  void testSetMqtt(bool ok);
+  void testSetPrintProgress(uint8_t percent);
+  void testSetDownloadProgress(uint8_t percent);
+
   uint8_t  segments() const { return _segments; }
   uint16_t ledsPerSegment() const { return _perSeg; }
   uint16_t ledCount() const { return _count; }
@@ -97,4 +105,6 @@ private:
   uint32_t _lastTickMs;
 
   RenderState _st;
+  RenderState _test;
+  bool     _testMode;
 };

@@ -17,6 +17,7 @@ private:
   void handleSubmitConfig(AsyncWebServerRequest* req);
   void handlePrinterDiscovery(AsyncWebServerRequest* req);
   void handleSubmitPrinterConfig(AsyncWebServerRequest* req);
+  void handleLedTestCmd(AsyncWebServerRequest* req);
 };
 
 const uint8_t* webserialHtml();

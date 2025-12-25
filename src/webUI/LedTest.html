@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>BambuBeacon LED Test</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <canvas id="particleCanvas"></canvas>
+
+  <div id="container">
+    <div id="header">
+      <a href="/"><img id="logo" src="/logo.svg" alt="Logo" /></a>
+      <h1>LED Test</h1>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Test Mode</div>
+      <label>
+        <input type="checkbox" id="testMode" />
+        Enable LED test mode
+      </label>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">States</div>
+      <div class="button-stack">
+        <button class="btn" data-state="idle">Idle</button>
+        <button class="btn" data-state="working">Working</button>
+        <button class="btn" data-state="finished">Finished</button>
+        <button class="btn btn-outline" data-state="warning">Warning</button>
+        <button class="btn btn-outline" data-state="error">Error</button>
+        <button class="btn btn-outline" data-state="paused">Paused</button>
+        <button class="btn btn-outline" data-state="heating">Heating</button>
+        <button class="btn btn-outline" data-state="cooling">Cooling</button>
+        <button class="btn btn-outline" data-state="noconnection">No Connection</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Links & Progress</div>
+      <label>
+        <input type="checkbox" id="mqttOk" checked />
+        MQTT Connected
+      </label>
+      <label>
+        <input type="checkbox" id="wifiOk" checked />
+        Wi-Fi Connected
+      </label>
+
+      <label for="printProgress">Print Progress</label>
+      <input type="range" id="printProgress" min="0" max="100" value="0" />
+
+      <label for="downloadProgress">Download Progress</label>
+      <input type="range" id="downloadProgress" min="0" max="100" value="0" />
+    </div>
+
+    <div class="button-stack actions">
+      <button type="button" class="btn btn-outline" onclick="location.href='/'">Back</button>
+    </div>
+  </div>
+
+  <script src="/backgroundCanvas.js"></script>
+  <script>
+    function post(action, value) {
+      const body = `action=${encodeURIComponent(action)}&value=${encodeURIComponent(value)}`;
+      fetch("/ledtestcmd", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body
+      }).catch(() => {});
+    }
+
+    document.getElementById("testMode").addEventListener("change", (e) => {
+      post("mode", e.target.checked ? "on" : "off");
+    });
+
+    document.querySelectorAll("button[data-state]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        post("state", btn.getAttribute("data-state"));
+      });
+    });
+
+    document.getElementById("mqttOk").addEventListener("change", (e) => {
+      post("mqtt", e.target.checked ? "1" : "0");
+    });
+
+    document.getElementById("wifiOk").addEventListener("change", (e) => {
+      post("wifi", e.target.checked ? "1" : "0");
+    });
+
+    document.getElementById("printProgress").addEventListener("change", (e) => {
+      post("print", e.target.value);
+    });
+
+    document.getElementById("downloadProgress").addEventListener("change", (e) => {
+      post("download", e.target.value);
+    });
+  </script>
+</body>
+</html>

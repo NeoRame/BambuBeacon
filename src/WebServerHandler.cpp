@@ -210,13 +210,80 @@ void WebServerHandler::handleSubmitPrinterConfig(AsyncWebServerRequest* req) {
     return req->getParam(name, true)->value();
   };
 
+  const uint16_t oldSeg = settings.get.LEDSegments();
+  const uint16_t oldPer = settings.get.LEDperSeg();
+
   settings.set.printerIP(getP("printerip"));
   settings.set.printerUSN(getP("printerusn"));
   settings.set.printerAC(getP("printerac"));
+
+  if (req->hasParam("ledsegments", true)) {
+    long v = getP("ledsegments").toInt();
+    if (v < 2) v = 2;
+    if (v > 3) v = 3;
+    settings.set.LEDSegments((uint16_t)v);
+  }
+
+  if (req->hasParam("ledperseg", true)) {
+    long v = getP("ledperseg").toInt();
+    if (v < 1) v = 1;
+    if (v > 64) v = 64;
+    settings.set.LEDperSeg((uint16_t)v);
+  }
+
   settings.save();
 
   bambu.reloadFromSettings();
   if (WiFi.status() == WL_CONNECTED) bambu.connect();
+
+  req->send(200, "application/json", "{\"success\":true}");
+
+  if (settings.get.LEDSegments() != oldSeg || settings.get.LEDperSeg() != oldPer) {
+    scheduleRestart(600);
+  }
+}
+
+void WebServerHandler::handleLedTestCmd(AsyncWebServerRequest* req) {
+  auto getP = [&](const char* name) -> String {
+    if (!req->hasParam(name, true)) return "";
+    return req->getParam(name, true)->value();
+  };
+
+  const String action = getP("action");
+  const String value = getP("value");
+
+  if (action == "mode") {
+    const bool enable = (value == "on" || value == "1" || value == "true");
+    ledsCtrl.setTestMode(enable);
+    req->send(200, "application/json", "{\"success\":true}");
+    return;
+  }
+
+  if (!ledsCtrl.testMode()) {
+    req->send(200, "application/json", "{\"success\":false,\"reason\":\"testmode\"}");
+    return;
+  }
+
+  if (action == "state") {
+    ledsCtrl.testSetState(value);
+  } else if (action == "wifi") {
+    ledsCtrl.testSetWifi(value != "0");
+  } else if (action == "mqtt") {
+    ledsCtrl.testSetMqtt(value != "0");
+  } else if (action == "print") {
+    long v = value.toInt();
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
+    ledsCtrl.testSetPrintProgress((uint8_t)v);
+  } else if (action == "download") {
+    long v = value.toInt();
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
+    ledsCtrl.testSetDownloadProgress((uint8_t)v);
+  } else {
+    req->send(400, "application/json", "{\"success\":false}");
+    return;
+  }
 
   req->send(200, "application/json", "{\"success\":true}");
 }
@@ -273,6 +340,13 @@ void WebServerHandler::begin() {
     sendGz(req, Maintenance_html_gz, Maintenance_html_gz_len, Maintenance_html_gz_mime);
   });
 
+  server.on("/ledtest", HTTP_GET, [&](AsyncWebServerRequest* req) {
+    if (!wifiManager.isApMode()) {
+      if (!isAuthorized(req)) return req->requestAuthentication();
+    }
+    sendGz(req, LedTest_html_gz, LedTest_html_gz_len, LedTest_html_gz_mime);
+  });
+
   server.on("/style.css", HTTP_GET, [&](AsyncWebServerRequest* req) {
     sendGz(req, Style_css_gz, Style_css_gz_len, Style_css_gz_mime);
   });
@@ -315,6 +389,13 @@ void WebServerHandler::begin() {
       if (!isAuthorized(req)) return req->requestAuthentication();
     }
     handleSubmitPrinterConfig(req);
+  });
+
+  server.on("/ledtestcmd", HTTP_POST, [&](AsyncWebServerRequest* req) {
+    if (!wifiManager.isApMode()) {
+      if (!isAuthorized(req)) return req->requestAuthentication();
+    }
+    handleLedTestCmd(req);
   });
 
   server.on("/config/backup", HTTP_GET, [&](AsyncWebServerRequest* req) {
@@ -431,6 +512,8 @@ void WebServerHandler::begin() {
     doc["printerIP"] = settings.get.printerIP();
     doc["printerUSN"] = settings.get.printerUSN();
     doc["printerAC"] = settings.get.printerAC();
+    doc["ledSegments"] = settings.get.LEDSegments();
+    doc["ledPerSeg"] = settings.get.LEDperSeg();
 
     String out;
     serializeJson(doc, out);

@@ -29,6 +29,15 @@
       <label for="printerac">Access Key</label>
       <input type="password" id="printerac" autocomplete="new-password" required />
 
+      <label for="ledsegments">LED Rings</label>
+      <select id="ledsegments" required>
+        <option value="2">2</option>
+        <option value="3">3</option>
+      </select>
+
+      <label for="ledperseg">LEDs per Ring</label>
+      <input type="number" id="ledperseg" min="1" max="64" step="1" required />
+
       <div class="button-stack actions">
         <button type="submit" class="btn" id="savePrinterBtn" disabled>Save</button>
         <button type="button" class="btn btn-outline" onclick="location.href='/'">Back</button>
@@ -87,16 +96,22 @@
       const ipEl = document.getElementById("printerip");
       const usnEl = document.getElementById("printerusn");
       const acEl = document.getElementById("printerac");
+      const segEl = document.getElementById("ledsegments");
+      const perEl = document.getElementById("ledperseg");
 
       const ip = ipEl.value.trim();
       const usn = usnEl.value.trim();
       const ac = acEl.value.trim();
+      const seg = parseInt(segEl.value, 10);
+      const per = parseInt(perEl.value, 10);
 
       ipEl.classList.toggle("invalid", !ip);
       usnEl.classList.toggle("invalid", !usn);
       acEl.classList.toggle("invalid", !ac);
+      segEl.classList.toggle("invalid", !(seg === 2 || seg === 3));
+      perEl.classList.toggle("invalid", !(Number.isInteger(per) && per >= 1 && per <= 64));
 
-      document.getElementById("savePrinterBtn").disabled = !(ip && usn && ac);
+      document.getElementById("savePrinterBtn").disabled = !(ip && usn && ac && (seg === 2 || seg === 3) && (Number.isInteger(per) && per >= 1 && per <= 64));
     }
 
     function renderPrinters(printers) {
@@ -162,6 +177,8 @@
         document.getElementById("printerip").value = c.printerIP || "";
         document.getElementById("printerusn").value = c.printerUSN || "";
         document.getElementById("printerac").value = c.printerAC || "";
+        document.getElementById("ledsegments").value = String(c.ledSegments || 3);
+        document.getElementById("ledperseg").value = String(c.ledPerSeg || 12);
       } catch {}
       updateSaveState();
     }
@@ -172,7 +189,9 @@
         const body =
           `printerip=${encodeURIComponent(document.getElementById("printerip").value)}` +
           `&printerusn=${encodeURIComponent(document.getElementById("printerusn").value)}` +
-          `&printerac=${encodeURIComponent(document.getElementById("printerac").value)}`;
+          `&printerac=${encodeURIComponent(document.getElementById("printerac").value)}` +
+          `&ledsegments=${encodeURIComponent(document.getElementById("ledsegments").value)}` +
+          `&ledperseg=${encodeURIComponent(document.getElementById("ledperseg").value)}`;
 
         const res = await fetch("/submitPrinterConfig", {
           method: "POST",
@@ -192,7 +211,7 @@
     document.getElementById("modal-backdrop").addEventListener("click", (e) => {
       if (e.target.id === "modal-backdrop") closeModal();
     });
-    ["printerip", "printerusn", "printerac"].forEach(id => {
+    ["printerip", "printerusn", "printerac", "ledsegments", "ledperseg"].forEach(id => {
       document.getElementById(id).addEventListener("input", updateSaveState);
     });
 
