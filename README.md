@@ -7,7 +7,7 @@ Parts you need:
 - 1x Wemos D1 Mini ESP32 or Athom Slim Wled controller or ESP32-C3 Nano
 - Soldering Iron
 - some wires
-- USB power supply 2A
+- USB power supply >= 500mA
 - Some printed Parts
 - BambuLab printer (make less sense without one)
 
