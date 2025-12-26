@@ -4,7 +4,7 @@
 
 Parts you need:
 - 3x 12bit WS2812 LED Ring
-- 1x Wemos D1 Mini ESP32
+- 1x Wemos D1 Mini ESP32 or Athom Slim Wled controller or ESP32-C3 Nano
 - Soldering Iron
 - some wires
 - USB power supply 2A
