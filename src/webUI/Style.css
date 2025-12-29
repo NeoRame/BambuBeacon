@@ -314,6 +314,16 @@ button:disabled,.btn:disabled{opacity:.55;cursor:not-allowed}
 .modal-item-meta{font-size:12px;color:var(--bb-text-2)}
 .modal-empty{text-align:center;color:var(--bb-text-2);padding:12px}
 
+.page-footer{
+  width:100%;
+  max-width:520px;
+  margin-top:8px;
+  padding:4px 0 2px;
+  text-align:center;
+  font-size:12px;
+  color:var(--bb-text-2);
+}
+
 body.webserial{
   overscroll-behavior:none;
   height:100%;
@@ -429,4 +439,14 @@ body.webserial h1,
 body.webserial h2{
   color:var(--bb-text);
   text-align:center;
+}
+body.webserial .page-footer{
+  position:static;
+  max-width:520px;
+  margin:8px auto 4px;
+  padding:0;
+  color:rgba(232,240,235,.75);
+  text-align:center;
+  font-size:12px;
+  z-index:2;
 }

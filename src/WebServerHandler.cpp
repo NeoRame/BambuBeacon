@@ -579,6 +579,7 @@ void WebServerHandler::begin() {
     doc["mode"] = wifiManager.isApMode() ? "AP" : "STA";
     doc["ip"] = wifiManager.isApMode() ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
     doc["rssi"] = (WiFi.status() == WL_CONNECTED) ? WiFi.RSSI() : 0;
+    doc["version"] = STRVERSION;
 
     String out;
     serializeJson(doc, out);

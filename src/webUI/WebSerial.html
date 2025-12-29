@@ -59,6 +59,7 @@
         </div>
         <h1 />
     </div>
+    <div class="page-footer" id="fwFooter">Firmware v? by SoftWareCrash</div>
 </body>
 <script src="/backgroundCanvas.js"></script>
 <script>
@@ -172,6 +173,19 @@
     window.addEventListener("DOMContentLoaded", function () {
         initWebPage();
     }, false);
+</script>
+<script>
+    (function () {
+        const el = document.getElementById("fwFooter");
+        if (!el) return;
+        fetch("/info.json", { cache: "no-store" })
+            .then(r => r.ok ? r.json() : null)
+            .then(j => {
+                if (!j || !j.version) return;
+                el.textContent = "Firmware v" + j.version + " by SoftWareCrash";
+            })
+            .catch(() => {});
+    })();
 </script>
 
 </html>
